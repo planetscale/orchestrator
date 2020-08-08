@@ -35,7 +35,7 @@ import (
 	"github.com/openark/orchestrator/go/kv"
 	ometrics "github.com/openark/orchestrator/go/metrics"
 	"github.com/openark/orchestrator/go/process"
-	"github.com/openark/orchestrator/go/raft"
+	orcraft "github.com/openark/orchestrator/go/raft"
 	"github.com/openark/orchestrator/go/util"
 	"github.com/patrickmn/go-cache"
 	"github.com/rcrowley/go-metrics"
@@ -519,6 +519,7 @@ func ContinuousDiscovery() {
 	}
 
 	log.Infof("continuous discovery: starting")
+	go discoverVitessTopo()
 	for {
 		select {
 		case <-healthTick:

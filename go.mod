@@ -23,4 +23,5 @@ require (
 	github.com/sjmudd/stopwatch v0.0.0-20170613150411-f380bf8a9be1
 	gopkg.in/gcfg.v1 v1.2.3
 	gopkg.in/warnings.v0 v0.1.2 // indirect
+	vitess.io/vitess v0.7.0
 )
