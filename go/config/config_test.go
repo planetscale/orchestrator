@@ -3,8 +3,8 @@ package config
 import (
 	"testing"
 
-	"github.com/openark/golib/log"
-	test "github.com/openark/golib/tests"
+	"github.com/openark/orchestrator/external/golib/log"
+	test "github.com/openark/orchestrator/external/golib/tests"
 )
 
 func init() {

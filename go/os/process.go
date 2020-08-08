@@ -24,7 +24,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/openark/golib/log"
+	"github.com/openark/orchestrator/external/golib/log"
 	"github.com/openark/orchestrator/go/config"
 )
 

@@ -23,8 +23,8 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/openark/golib/log"
-	"github.com/openark/golib/sqlutils"
+	"github.com/openark/orchestrator/external/golib/log"
+	"github.com/openark/orchestrator/external/golib/sqlutils"
 	"github.com/patrickmn/go-cache"
 	"github.com/rcrowley/go-metrics"
 

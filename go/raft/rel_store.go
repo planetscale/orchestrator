@@ -22,10 +22,10 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/openark/golib/log"
-	"github.com/openark/golib/sqlutils"
+	"github.com/openark/orchestrator/external/golib/log"
+	"github.com/openark/orchestrator/external/golib/sqlutils"
 
-	"github.com/hashicorp/raft"
+	"github.com/openark/orchestrator/external/raft"
 )
 
 const raftStoreFile = "raft_store.db"

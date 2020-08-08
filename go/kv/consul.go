@@ -28,7 +28,7 @@ import (
 	consulapi "github.com/armon/consul-api"
 	"github.com/patrickmn/go-cache"
 
-	"github.com/openark/golib/log"
+	"github.com/openark/orchestrator/external/golib/log"
 )
 
 // A Consul store based on config's `ConsulAddress`, `ConsulScheme`, and `ConsulKVPrefix`

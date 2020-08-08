@@ -21,9 +21,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/openark/golib/log"
+	"github.com/openark/orchestrator/external/golib/log"
 
-	"github.com/hashicorp/raft"
+	"github.com/openark/orchestrator/external/raft"
 )
 
 // fsm is a raft finite state machine

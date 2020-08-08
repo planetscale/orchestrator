@@ -1,7 +1,7 @@
 package util
 
 import (
-	test "github.com/openark/golib/tests"
+	test "github.com/openark/orchestrator/external/golib/tests"
 	"testing"
 )
 

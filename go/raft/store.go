@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openark/golib/log"
+	"github.com/openark/orchestrator/external/golib/log"
 
-	"github.com/hashicorp/raft"
+	"github.com/openark/orchestrator/external/raft"
 )
 
 type Store struct {

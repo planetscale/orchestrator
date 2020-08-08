@@ -26,8 +26,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openark/golib/log"
-	"github.com/openark/golib/util"
+	"github.com/openark/orchestrator/external/golib/log"
+	"github.com/openark/orchestrator/external/golib/util"
 	"github.com/openark/orchestrator/go/agent"
 	"github.com/openark/orchestrator/go/config"
 	"github.com/openark/orchestrator/go/inst"

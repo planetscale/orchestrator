@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/openark/golib/log"
+	"github.com/openark/orchestrator/external/golib/log"
 	"hash"
 	"hash/crc64"
 	"io"
@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/raft"
+	"github.com/openark/orchestrator/external/raft"
 )
 
 const (

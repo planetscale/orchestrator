@@ -17,7 +17,7 @@
 package orcraft
 
 import (
-	"github.com/hashicorp/raft"
+	"github.com/openark/orchestrator/external/raft"
 )
 
 // fsmSnapshot handles raft persisting of snapshots

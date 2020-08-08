@@ -17,8 +17,8 @@
 package kv
 
 import (
-	"github.com/openark/golib/log"
-	"github.com/openark/golib/sqlutils"
+	"github.com/openark/orchestrator/external/golib/log"
+	"github.com/openark/orchestrator/external/golib/sqlutils"
 	"github.com/openark/orchestrator/go/db"
 )
 
