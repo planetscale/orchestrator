@@ -347,7 +347,7 @@ func ReadTopologyInstanceBufferable(instanceKey *InstanceKey, bufferWrites bool,
 
 	if config.Config.Vitess {
 		var err error
-		tablet, err = ReadTablet(instanceKey)
+		tablet, err = ReadTablet(*instanceKey)
 		if err != nil {
 			log.Errore(err)
 		}
@@ -3353,7 +3353,7 @@ func isInjectedPseudoGTID(clusterName string) (injected bool, err error) {
 }
 
 // ReadTablet reads the vitess tablet record.
-func ReadTablet(instanceKey *InstanceKey) (*topodatapb.Tablet, error) {
+func ReadTablet(instanceKey InstanceKey) (*topodatapb.Tablet, error) {
 	query := `
 		select
 			info
@@ -3373,7 +3373,7 @@ func ReadTablet(instanceKey *InstanceKey) (*topodatapb.Tablet, error) {
 }
 
 // SaveTablet saves the tablet record against the instanceKey.
-func SaveTablet(instanceKey *InstanceKey, tablet *topodatapb.Tablet) error {
+func SaveTablet(instanceKey InstanceKey, tablet *topodatapb.Tablet) error {
 	_, err := db.ExecOrchestrator(`
 		replace
 			into vitess_tablet (

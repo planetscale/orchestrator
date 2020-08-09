@@ -896,7 +896,7 @@ func checkAndRecoverDeadMaster(analysisEntry inst.ReplicationAnalysis, candidate
 				_, err := inst.SetReadOnly(&promotedReplica.Key, false)
 				AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("- RecoverDeadMaster: applying read-only=0 on promoted master: success=%t", (err == nil)))
 				if config.Config.Vitess {
-					err = TabletSetMaster(&promotedReplica.Key)
+					err = TabletSetMaster(promotedReplica.Key)
 					AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("- RecoverDeadMaster: TabletSetMaster: success=%t", (err == nil)))
 				}
 			}
@@ -965,7 +965,7 @@ func checkAndRecoverDeadMaster(analysisEntry inst.ReplicationAnalysis, candidate
 func changeTabletToMaster(analysisEntry inst.ReplicationAnalysis, candidateInstanceKey *inst.InstanceKey, forceInstanceRecovery bool, skipProcesses bool) (recoveryAttempted bool, topologyRecovery *TopologyRecovery, err error) {
 	// This check is not required, but it's there for safety.
 	if config.Config.Vitess {
-		err = TabletSetMaster(&analysisEntry.AnalyzedInstanceKey)
+		err = TabletSetMaster(analysisEntry.AnalyzedInstanceKey)
 		AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("- ChangeTabletToMaster: success=%t", (err == nil)))
 	}
 	return true, topologyRecovery, err
@@ -1677,7 +1677,7 @@ func executeCheckAndRecoverFunction(analysisEntry inst.ReplicationAnalysis, cand
 	// If in Vitess mode, obtain shard lock.
 	// TODO(sougou): is this the right place to obtain the lock?
 	if config.Config.Vitess {
-		unlock, err := LockShard(&analysisEntry.AnalyzedInstanceKey)
+		unlock, err := LockShard(analysisEntry.AnalyzedInstanceKey)
 		if err != nil {
 			log.Infof("CheckAndRecover: Analysis: %+v, InstanceKey: %+v, candidateInstanceKey: %+v, "+
 				"skipProcesses: %v: NOT detecting/recovering host, could not obtain shard lock (%v)",
@@ -2029,7 +2029,7 @@ func GracefulMasterTakeover(clusterName string, designatedKey *inst.InstanceKey,
 			err = credentialsErr
 		}
 	}
-	if auto {
+	if auto || config.Config.Vitess {
 		_, startReplicationErr := inst.StartReplication(&clusterMaster.Key)
 		if err == nil {
 			err = startReplicationErr

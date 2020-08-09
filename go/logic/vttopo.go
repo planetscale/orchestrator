@@ -19,6 +19,7 @@ package logic
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/openark/orchestrator/external/golib/log"
@@ -33,10 +34,25 @@ import (
 	"vitess.io/vitess/go/vt/vttablet/tmclient"
 )
 
-var ts *topo.Server
+var (
+	ts *topo.Server
+)
 
-func OpenVitessTopo() {
+// OpenVitessTopo opens the vitess topo if enables and returns a ticker
+// channel for polling.
+func OpenVitessTopo() <-chan time.Time {
+	if !config.Config.Vitess {
+		return nil
+	}
+	// TODO(sougou): If there's a shutdown signal, we have to close the topo.
 	ts = topo.Open()
+	// Clear existing cache and perform a new refresh.
+	if _, err := db.ExecOrchestrator("delete from vitess_tablet"); err != nil {
+		log.Errore(err)
+	}
+	RefreshVitessTopo()
+	// TODO(sougou): parameterize poll interval.
+	return time.Tick(15 * time.Second)
 }
 
 // RefreshVitessTopo refreshes the vitess topology.
@@ -58,11 +74,14 @@ func RefreshVitessTopo() {
 	// where each instanceKey can have multiple tablets.
 	for _, tabletInfo := range tablets {
 		tablet := tabletInfo.Tablet
-		instanceKey := &inst.InstanceKey{
-			Hostname: tablet.GetMysqlHostname(),
-			Port:     int(tablet.GetMysqlPort()),
+		if tablet.MysqlHostname == "" {
+			continue
 		}
-		latestInstances[*instanceKey] = true
+		instanceKey := inst.InstanceKey{
+			Hostname: tablet.MysqlHostname,
+			Port:     int(tablet.MysqlPort),
+		}
+		latestInstances[instanceKey] = true
 		old, err := inst.ReadTablet(instanceKey)
 		if err != nil {
 			log.Errore(err)
@@ -75,11 +94,7 @@ func RefreshVitessTopo() {
 			log.Errore(err)
 			continue
 		}
-		_, err = inst.ReadTopologyInstance(instanceKey)
-		if err != nil {
-			log.Errorf("Error reading instance info: %v", err)
-			continue
-		}
+		discoveryQueue.Push(instanceKey)
 		log.Infof("Discovered: %v", tablet)
 	}
 
@@ -124,9 +139,9 @@ func RefreshVitessTopo() {
 }
 
 // LockShard locks the keyspace-shard preventing others from performing conflicting actions.
-func LockShard(instanceKey *inst.InstanceKey) (func(*error), error) {
-	if instanceKey == nil {
-		return nil, errors.New("Can't lock shard: instance is nil")
+func LockShard(instanceKey inst.InstanceKey) (func(*error), error) {
+	if instanceKey.Hostname == "" {
+		return nil, errors.New("Can't lock shard: instance is unspecified")
 	}
 
 	tablet, err := inst.ReadTablet(instanceKey)
@@ -138,9 +153,9 @@ func LockShard(instanceKey *inst.InstanceKey) (func(*error), error) {
 }
 
 // TabletSetMaster designates the tablet that owns an instance as the master.
-func TabletSetMaster(instanceKey *inst.InstanceKey) error {
-	if instanceKey == nil {
-		return errors.New("Can't set tablet to master: instance is nil")
+func TabletSetMaster(instanceKey inst.InstanceKey) error {
+	if instanceKey.Hostname == "" {
+		return errors.New("Can't set tablet to master: instance is unspecified")
 	}
 	tablet, err := inst.ReadTablet(instanceKey)
 	if err != nil {
