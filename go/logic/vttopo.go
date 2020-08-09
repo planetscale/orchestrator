@@ -60,6 +60,8 @@ func discoverVitessTopo() {
 		}
 
 		// Discover new tablets.
+		// TODO(sougou): enhance this to work with multi-schema,
+		// where each instanceKey can have multiple tablets.
 		for _, tabletInfo := range tablets {
 			tablet := tabletInfo.Tablet
 			instanceKey := &inst.InstanceKey{
@@ -75,19 +77,7 @@ func discoverVitessTopo() {
 			if proto.Equal(tablet, old) {
 				continue
 			}
-			_, err = db.ExecOrchestrator(`
-					replace
-						into vitess_tablet (
-							hostname, port, info
-						) values (
-							?, ?, ?
-						)
-					`,
-				instanceKey.Hostname,
-				instanceKey.Port,
-				proto.CompactTextString(tablet),
-			)
-			if err != nil {
+			if err := inst.SaveTablet(instanceKey, tablet); err != nil {
 				log.Errore(err)
 				continue
 			}
@@ -140,6 +130,7 @@ func discoverVitessTopo() {
 	}
 }
 
+// LockShard locks the keyspace-shard preventing others from performing conflicting actions.
 func LockShard(instanceKey *inst.InstanceKey) (func(*error), error) {
 	topoOnce.Do(func() { ts = topo.Open() })
 
@@ -152,26 +143,26 @@ func LockShard(instanceKey *inst.InstanceKey) (func(*error), error) {
 		return nil, err
 	}
 	_, unlock, err := ts.LockShard(context.TODO(), tablet.Keyspace, tablet.Shard, "Orc Recovery")
-	log.Infof("ShardLock: %v", err)
 	return unlock, err
 }
 
+// TabletSetMaster designates the tablet that owns an instance as the master.
 func TabletSetMaster(instanceKey *inst.InstanceKey) error {
-	return tabletSetType(instanceKey, topodatapb.TabletType_MASTER)
-}
-
-func TabletSetReplica(instanceKey *inst.InstanceKey) error {
-	return tabletSetType(instanceKey, topodatapb.TabletType_REPLICA)
-}
-
-func tabletSetType(instanceKey *inst.InstanceKey, tabletType topodatapb.TabletType) error {
 	if instanceKey == nil {
-		return errors.New("Can't set tablet type: instance is nil")
+		return errors.New("Can't set tablet to master: instance is nil")
 	}
 	tablet, err := inst.ReadTablet(instanceKey)
 	if err != nil {
 		return err
 	}
 	tmc := tmclient.NewTabletManagerClient()
-	return tmc.ChangeType(context.TODO(), tablet, tabletType)
+	if err := tmc.ChangeType(context.TODO(), tablet, topodatapb.TabletType_MASTER); err != nil {
+		return err
+	}
+	// Proactively change the tablet type locally so we don't spam this until we get the refresh.
+	tablet.Type = topodatapb.TabletType_MASTER
+	if err := inst.SaveTablet(instanceKey, tablet); err != nil {
+		log.Errore(err)
+	}
+	return nil
 }

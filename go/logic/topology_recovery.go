@@ -904,10 +904,6 @@ func checkAndRecoverDeadMaster(analysisEntry inst.ReplicationAnalysis, candidate
 			go func() {
 				_, err := inst.SetReadOnly(&analysisEntry.AnalyzedInstanceKey, true)
 				AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("- RecoverDeadMaster: applying read-only=1 on demoted master: success=%t", (err == nil)))
-				if config.Config.Vitess {
-					err = TabletSetReplica(&analysisEntry.AnalyzedInstanceKey)
-					AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("- RecoverDeadMaster: TabletSetReplica: success=%t", (err == nil)))
-				}
 			}()
 		}
 
@@ -967,8 +963,7 @@ func checkAndRecoverDeadMaster(analysisEntry inst.ReplicationAnalysis, candidate
 }
 
 func changeTabletToMaster(analysisEntry inst.ReplicationAnalysis, candidateInstanceKey *inst.InstanceKey, forceInstanceRecovery bool, skipProcesses bool) (recoveryAttempted bool, topologyRecovery *TopologyRecovery, err error) {
-	// TODO(sougou): This spams TER on the tablet until an update is received.
-	// Find a way to wait till the next update before retrying.
+	// This check is not required, but it's there for safety.
 	if config.Config.Vitess {
 		err = TabletSetMaster(&analysisEntry.AnalyzedInstanceKey)
 		AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("- ChangeTabletToMaster: success=%t", (err == nil)))
@@ -1680,6 +1675,7 @@ func executeCheckAndRecoverFunction(analysisEntry inst.ReplicationAnalysis, cand
 	}
 
 	// If in Vitess mode, obtain shard lock.
+	// TODO(sougou): is this the right place to obtain the lock?
 	if config.Config.Vitess {
 		unlock, err := LockShard(&analysisEntry.AnalyzedInstanceKey)
 		if err != nil {

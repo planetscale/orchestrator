@@ -3371,3 +3371,20 @@ func ReadTablet(instanceKey *InstanceKey) (*topodatapb.Tablet, error) {
 	}
 	return tablet, nil
 }
+
+// SaveTablet saves the tablet record against the instanceKey.
+func SaveTablet(instanceKey *InstanceKey, tablet *topodatapb.Tablet) error {
+	_, err := db.ExecOrchestrator(`
+		replace
+			into vitess_tablet (
+				hostname, port, info
+			) values (
+				?, ?, ?
+			)
+		`,
+		instanceKey.Hostname,
+		instanceKey.Port,
+		proto.CompactTextString(tablet),
+	)
+	return err
+}

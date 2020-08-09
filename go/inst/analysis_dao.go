@@ -482,6 +482,7 @@ func GetReplicationAnalysis(clusterName string, hints *ReplicationAnalysisHints)
 
 		a.IsReadOnly = m.GetUint("read_only") == 1
 
+		// TODO(sougou): maybe this should be an enum: TabletNone, TabletIsNotMaster, TabletIsMaster.
 		a.TabletIsMaster = true
 		tablet := &topodatapb.Tablet{}
 		if err := proto.UnmarshalText(m.GetString("tablet_info"), tablet); err == nil {
