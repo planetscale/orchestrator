@@ -19,8 +19,6 @@ package logic
 import (
 	"context"
 	"errors"
-	"sync"
-	"time"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/openark/orchestrator/external/golib/log"
@@ -35,95 +33,90 @@ import (
 	"vitess.io/vitess/go/vt/vttablet/tmclient"
 )
 
-var (
-	topoOnce sync.Once
-	ts       *topo.Server
-)
+var ts *topo.Server
 
-func discoverVitessTopo() {
+func OpenVitessTopo() {
+	ts = topo.Open()
+}
+
+// RefreshVitessTopo refreshes the vitess topology.
+func RefreshVitessTopo() {
+	// Safety check
 	if !config.Config.Vitess {
 		return
 	}
-	// TODO(sougou): If there's a shutdown signal, we have to close the topo.
-	topoOnce.Do(func() { ts = topo.Open() })
 
-	// Forever loop
-	// TODO(sougou): parameterize poll interval.
-	vttopoTick := time.Tick(15 * time.Second)
-	log.Infof("Starting vitess discovery loop, every %v", 15*time.Second)
-	for range vttopoTick {
-		latestInstances := make(map[inst.InstanceKey]bool)
-		tablets, err := topotools.GetAllTabletsAcrossCells(context.TODO(), ts)
+	latestInstances := make(map[inst.InstanceKey]bool)
+	tablets, err := topotools.GetAllTabletsAcrossCells(context.TODO(), ts)
+	if err != nil {
+		log.Errorf("Error fetching topo info: %v", err)
+		return
+	}
+
+	// Discover new tablets.
+	// TODO(sougou): enhance this to work with multi-schema,
+	// where each instanceKey can have multiple tablets.
+	for _, tabletInfo := range tablets {
+		tablet := tabletInfo.Tablet
+		instanceKey := &inst.InstanceKey{
+			Hostname: tablet.GetMysqlHostname(),
+			Port:     int(tablet.GetMysqlPort()),
+		}
+		latestInstances[*instanceKey] = true
+		old, err := inst.ReadTablet(instanceKey)
 		if err != nil {
-			log.Errorf("Error fetching topo info: %v", err)
+			log.Errore(err)
 			continue
 		}
-
-		// Discover new tablets.
-		// TODO(sougou): enhance this to work with multi-schema,
-		// where each instanceKey can have multiple tablets.
-		for _, tabletInfo := range tablets {
-			tablet := tabletInfo.Tablet
-			instanceKey := &inst.InstanceKey{
-				Hostname: tablet.GetMysqlHostname(),
-				Port:     int(tablet.GetMysqlPort()),
-			}
-			latestInstances[*instanceKey] = true
-			old, err := inst.ReadTablet(instanceKey)
-			if err != nil {
-				log.Errore(err)
-				continue
-			}
-			if proto.Equal(tablet, old) {
-				continue
-			}
-			if err := inst.SaveTablet(instanceKey, tablet); err != nil {
-				log.Errore(err)
-				continue
-			}
-			_, err = inst.ReadTopologyInstance(instanceKey)
-			if err != nil {
-				log.Errorf("Error reading instance info: %v", err)
-				continue
-			}
-			log.Infof("Discovered: %v", tablet)
+		if proto.Equal(tablet, old) {
+			continue
 		}
+		if err := inst.SaveTablet(instanceKey, tablet); err != nil {
+			log.Errore(err)
+			continue
+		}
+		_, err = inst.ReadTopologyInstance(instanceKey)
+		if err != nil {
+			log.Errorf("Error reading instance info: %v", err)
+			continue
+		}
+		log.Infof("Discovered: %v", tablet)
+	}
 
-		// Forget tablets that were removed.
-		toForget := make(map[inst.InstanceKey]*topodatapb.Tablet)
-		query := "select hostname, port, info from vitess_tablet"
-		err = db.QueryOrchestrator(query, nil, func(row sqlutils.RowMap) error {
-			curKey := inst.InstanceKey{
-				Hostname: row.GetString("hostname"),
-				Port:     row.GetInt("port"),
-			}
-			if !latestInstances[curKey] {
-				tablet := &topodatapb.Tablet{}
-				if err := proto.UnmarshalText(row.GetString("info"), tablet); err != nil {
-					log.Errore(err)
-					return nil
-				}
-				toForget[curKey] = tablet
-			}
-			return nil
-		})
-		for instanceKey, tablet := range toForget {
-			log.Infof("Forgotten: %v", tablet)
-			if err := inst.ForgetInstance(&instanceKey); err != nil {
+	// Forget tablets that were removed.
+	toForget := make(map[inst.InstanceKey]*topodatapb.Tablet)
+	query := "select hostname, port, info from vitess_tablet"
+	err = db.QueryOrchestrator(query, nil, func(row sqlutils.RowMap) error {
+		curKey := inst.InstanceKey{
+			Hostname: row.GetString("hostname"),
+			Port:     row.GetInt("port"),
+		}
+		if !latestInstances[curKey] {
+			tablet := &topodatapb.Tablet{}
+			if err := proto.UnmarshalText(row.GetString("info"), tablet); err != nil {
 				log.Errore(err)
+				return nil
 			}
-			_, err := db.ExecOrchestrator(`
+			toForget[curKey] = tablet
+		}
+		return nil
+	})
+	if err != nil {
+		log.Errore(err)
+	}
+	for instanceKey, tablet := range toForget {
+		log.Infof("Forgotten: %v", tablet)
+		if err := inst.ForgetInstance(&instanceKey); err != nil {
+			log.Errore(err)
+		}
+		_, err := db.ExecOrchestrator(`
 					delete
 						from vitess_tablet
 					where
 						hostname=? and port=?`,
-				instanceKey.Hostname,
-				instanceKey.Port,
-			)
-			if err != nil {
-				log.Errore(err)
-			}
-		}
+			instanceKey.Hostname,
+			instanceKey.Port,
+		)
 		if err != nil {
 			log.Errore(err)
 		}
@@ -132,8 +125,6 @@ func discoverVitessTopo() {
 
 // LockShard locks the keyspace-shard preventing others from performing conflicting actions.
 func LockShard(instanceKey *inst.InstanceKey) (func(*error), error) {
-	topoOnce.Do(func() { ts = topo.Open() })
-
 	if instanceKey == nil {
 		return nil, errors.New("Can't lock shard: instance is nil")
 	}

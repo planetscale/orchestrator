@@ -491,6 +491,13 @@ func ContinuousDiscovery() {
 	raftCaretakingTick := time.Tick(10 * time.Minute)
 	recoveryTick := time.Tick(time.Duration(config.RecoveryPollSeconds) * time.Second)
 	autoPseudoGTIDTick := time.Tick(time.Duration(config.PseudoGTIDIntervalSeconds) * time.Second)
+	var vitessTopoTick <-chan time.Time
+	if config.Config.Vitess {
+		// TODO(sougou): If there's a shutdown signal, we have to close the topo.
+		OpenVitessTopo()
+		// TODO(sougou): parameterize poll interval.
+		vitessTopoTick = time.Tick(15 * time.Second)
+	}
 	var recoveryEntrance int64
 	var snapshotTopologiesTick <-chan time.Time
 	if config.Config.SnapshotTopologiesIntervalHours > 0 {
@@ -519,7 +526,6 @@ func ContinuousDiscovery() {
 	}
 
 	log.Infof("continuous discovery: starting")
-	go discoverVitessTopo()
 	for {
 		select {
 		case <-healthTick:
@@ -615,6 +621,8 @@ func ContinuousDiscovery() {
 					go inst.SnapshotTopologies()
 				}
 			}()
+		case <-vitessTopoTick:
+			go RefreshVitessTopo()
 		}
 	}
 }
