@@ -1,5 +1,6 @@
 {
   "Debug": true,
+  "Vitess": true,
   "MySQLTopologyUser": "orc_client_user",
   "MySQLTopologyPassword": "orc_client_user_password",
   "BackendDB": "sqlite",

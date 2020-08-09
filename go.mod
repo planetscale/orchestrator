@@ -9,6 +9,8 @@ require (
 	github.com/cyberdelia/go-metrics-graphite v0.0.0-20161219230853-39f87cc3b432
 	github.com/go-martini/martini v0.0.0-20170121215854-22fa46961aab
 	github.com/go-sql-driver/mysql v1.5.0
+	github.com/gogo/protobuf v1.3.1
+	github.com/golang/protobuf v1.3.2
 	github.com/hashicorp/go-msgpack v1.1.5
 	github.com/howeyc/gopass v0.0.0-20190910152052-7cb4b85ec19c
 	github.com/martini-contrib/auth v0.0.0-20150219114609-fa62c19b7ae8

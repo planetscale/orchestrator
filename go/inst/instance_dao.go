@@ -21,7 +21,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/go-sql-driver/mysql"
 	"regexp"
 	"runtime"
 	"sort"
@@ -29,6 +28,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
+	"github.com/golang/protobuf/proto"
 
 	"github.com/openark/orchestrator/external/golib/log"
 	"github.com/openark/orchestrator/external/golib/math"
@@ -44,6 +46,9 @@ import (
 	"github.com/openark/orchestrator/go/kv"
 	"github.com/openark/orchestrator/go/metrics/query"
 	"github.com/openark/orchestrator/go/util"
+
+	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
+	"vitess.io/vitess/go/vt/topo/topoproto"
 )
 
 const (
@@ -313,6 +318,7 @@ func ReadTopologyInstanceBufferable(instanceKey *InstanceKey, bufferWrites bool,
 
 	var waitGroup sync.WaitGroup
 	var serverUuidWaitGroup sync.WaitGroup
+	var tablet *topodatapb.Tablet
 	readingStartTime := time.Now()
 	instance := NewInstance()
 	instanceFound := false
@@ -338,6 +344,10 @@ func ReadTopologyInstanceBufferable(instanceKey *InstanceKey, bufferWrites bool,
 	lastAttemptedCheckTimer := time.AfterFunc(time.Second, func() {
 		go UpdateInstanceLastAttemptedCheck(instanceKey)
 	})
+
+	if config.Config.Vitess {
+		tablet = ReadTablet(instanceKey)
+	}
 
 	latency.Start("instance")
 	db, err := db.OpenDiscovery(instanceKey.Hostname, instanceKey.Port)
@@ -736,6 +746,9 @@ func ReadTopologyInstanceBufferable(instanceKey *InstanceKey, bufferWrites bool,
 		}()
 	}
 
+	if tablet != nil {
+		instance.DataCenter = tablet.Alias.Cell
+	}
 	if config.Config.DetectDataCenterQuery != "" && !isMaxScale {
 		waitGroup.Add(1)
 		go func() {
@@ -745,6 +758,7 @@ func ReadTopologyInstanceBufferable(instanceKey *InstanceKey, bufferWrites bool,
 		}()
 	}
 
+	// TODO(sougou): use cell alias to identify regions
 	if config.Config.DetectRegionQuery != "" && !isMaxScale {
 		waitGroup.Add(1)
 		go func() {
@@ -763,6 +777,9 @@ func ReadTopologyInstanceBufferable(instanceKey *InstanceKey, bufferWrites bool,
 		}()
 	}
 
+	if tablet != nil {
+		instance.InstanceAlias = topoproto.TabletAliasString(tablet.Alias)
+	}
 	if config.Config.DetectInstanceAliasQuery != "" && !isMaxScale {
 		waitGroup.Add(1)
 		go func() {
@@ -772,13 +789,20 @@ func ReadTopologyInstanceBufferable(instanceKey *InstanceKey, bufferWrites bool,
 		}()
 	}
 
-	if config.Config.DetectSemiSyncEnforcedQuery != "" && !isMaxScale {
-		waitGroup.Add(1)
-		go func() {
-			defer waitGroup.Done()
-			err := db.QueryRow(config.Config.DetectSemiSyncEnforcedQuery).Scan(&instance.SemiSyncEnforced)
-			logReadTopologyInstanceError(instanceKey, "DetectSemiSyncEnforcedQuery", err)
-		}()
+	{
+		semiSyncEnforcedQuery := config.Config.DetectSemiSyncEnforcedQuery
+		if config.Config.Vitess {
+			// TODO(sougou): This is unreliable. Need to upgrade this to use policy rules.
+			semiSyncEnforcedQuery = "SELECT @@global.rpl_semi_sync_master_wait_no_slave AND @@global.rpl_semi_sync_master_timeout > 1000000"
+		}
+		if semiSyncEnforcedQuery != "" && !isMaxScale {
+			waitGroup.Add(1)
+			go func() {
+				defer waitGroup.Done()
+				err := db.QueryRow(semiSyncEnforcedQuery).Scan(&instance.SemiSyncEnforced)
+				logReadTopologyInstanceError(instanceKey, "DetectSemiSyncEnforcedQuery", err)
+			}()
+		}
 	}
 
 	{
@@ -844,9 +868,21 @@ func ReadTopologyInstanceBufferable(instanceKey *InstanceKey, bufferWrites bool,
 			}
 		}()
 	}
+	// For a vitess cluster, the tablet type dictates the rule
+	{
+		if tablet.Type == topodatapb.TabletType_MASTER || tablet.Type == topodatapb.TabletType_REPLICA {
+			instance.PromotionRule = "neutral"
+		} else {
+			instance.PromotionRule = "must_not"
+		}
+	}
 
 	ReadClusterAliasOverride(instance)
 	if !isMaxScale {
+		// If we're in vitess mode
+		if tablet != nil {
+			instance.SuggestedClusterAlias = fmt.Sprintf("%v:%v", tablet.Keyspace, tablet.Shard)
+		}
 		if instance.SuggestedClusterAlias == "" {
 			// Only need to do on masters
 			if config.Config.DetectClusterAliasQuery != "" {
@@ -3310,4 +3346,25 @@ func isInjectedPseudoGTID(clusterName string) (injected bool, err error) {
 	})
 	clusterInjectedPseudoGTIDCache.Set(clusterName, injected, cache.DefaultExpiration)
 	return injected, log.Errore(err)
+}
+
+// ReadTablet reads the vitess tablet record.
+func ReadTablet(instanceKey *InstanceKey) *topodatapb.Tablet {
+	query := `
+		select
+			info
+		from
+			vitess_tablet
+		where hostname=? and port=?
+		`
+	args := sqlutils.Args(instanceKey.Hostname, instanceKey.Port)
+	tablet := &topodatapb.Tablet{}
+	err := db.QueryOrchestrator(query, args, func(row sqlutils.RowMap) error {
+		return proto.UnmarshalText(row.GetString("info"), tablet)
+	})
+	if err != nil {
+		log.Errore(err)
+		return nil
+	}
+	return tablet
 }

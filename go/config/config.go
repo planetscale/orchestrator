@@ -87,6 +87,7 @@ var deprecatedConfigurationVariables = []string{
 // strictly expected from user.
 type Configuration struct {
 	Debug                                      bool   // set debug mode (similar to --debug option)
+	Vitess                                     bool   // If true, manage a vitess cluster
 	EnableSyslog                               bool   // Should logs be directed (in addition) to syslog daemon?
 	ListenAddress                              string // Where orchestrator HTTP should listen for TCP
 	ListenSocket                               string // Where orchestrator HTTP should listen for unix socket (default: empty; when given, TCP is disabled)
