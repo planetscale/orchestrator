@@ -18,6 +18,8 @@ package logic
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"time"
 
 	"github.com/golang/protobuf/proto"
@@ -30,6 +32,12 @@ import (
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 	"vitess.io/vitess/go/vt/topo"
 	"vitess.io/vitess/go/vt/topotools"
+	"vitess.io/vitess/go/vt/vttablet/tmclient"
+)
+
+var (
+	topoOnce sync.Once
+	ts       *topo.Server
 )
 
 func discoverVitessTopo() {
@@ -37,7 +45,7 @@ func discoverVitessTopo() {
 		return
 	}
 	// TODO(sougou): If there's a shutdown signal, we have to close the topo.
-	ts := topo.Open()
+	topoOnce.Do(func() { ts = topo.Open() })
 
 	// Forever loop
 	// TODO(sougou): parameterize poll interval.
@@ -59,11 +67,15 @@ func discoverVitessTopo() {
 				Port:     int(tablet.GetMysqlPort()),
 			}
 			latestInstances[*instanceKey] = true
-			old := inst.ReadTablet(instanceKey)
+			old, err := inst.ReadTablet(instanceKey)
+			if err != nil {
+				log.Errore(err)
+				continue
+			}
 			if proto.Equal(tablet, old) {
 				continue
 			}
-			_, err := db.ExecOrchestrator(`
+			_, err = db.ExecOrchestrator(`
 					replace
 						into vitess_tablet (
 							hostname, port, info
@@ -126,4 +138,40 @@ func discoverVitessTopo() {
 			log.Errore(err)
 		}
 	}
+}
+
+func LockShard(instanceKey *inst.InstanceKey) (func(*error), error) {
+	topoOnce.Do(func() { ts = topo.Open() })
+
+	if instanceKey == nil {
+		return nil, errors.New("Can't lock shard: instance is nil")
+	}
+
+	tablet, err := inst.ReadTablet(instanceKey)
+	if err != nil {
+		return nil, err
+	}
+	_, unlock, err := ts.LockShard(context.TODO(), tablet.Keyspace, tablet.Shard, "Orc Recovery")
+	log.Infof("ShardLock: %v", err)
+	return unlock, err
+}
+
+func TabletSetMaster(instanceKey *inst.InstanceKey) error {
+	return tabletSetType(instanceKey, topodatapb.TabletType_MASTER)
+}
+
+func TabletSetReplica(instanceKey *inst.InstanceKey) error {
+	return tabletSetType(instanceKey, topodatapb.TabletType_REPLICA)
+}
+
+func tabletSetType(instanceKey *inst.InstanceKey, tabletType topodatapb.TabletType) error {
+	if instanceKey == nil {
+		return errors.New("Can't set tablet type: instance is nil")
+	}
+	tablet, err := inst.ReadTablet(instanceKey)
+	if err != nil {
+		return err
+	}
+	tmc := tmclient.NewTabletManagerClient()
+	return tmc.ChangeType(context.TODO(), tablet, tabletType)
 }

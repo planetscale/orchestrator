@@ -34,7 +34,7 @@ import (
 	ometrics "github.com/openark/orchestrator/go/metrics"
 	"github.com/openark/orchestrator/go/os"
 	"github.com/openark/orchestrator/go/process"
-	"github.com/openark/orchestrator/go/raft"
+	orcraft "github.com/openark/orchestrator/go/raft"
 	"github.com/openark/orchestrator/go/util"
 	"github.com/patrickmn/go-cache"
 	"github.com/rcrowley/go-metrics"
@@ -895,11 +895,19 @@ func checkAndRecoverDeadMaster(analysisEntry inst.ReplicationAnalysis, candidate
 			{
 				_, err := inst.SetReadOnly(&promotedReplica.Key, false)
 				AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("- RecoverDeadMaster: applying read-only=0 on promoted master: success=%t", (err == nil)))
+				if config.Config.Vitess {
+					err = TabletSetMaster(&promotedReplica.Key)
+					AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("- RecoverDeadMaster: TabletSetMaster: success=%t", (err == nil)))
+				}
 			}
 			// Let's attempt, though we won't necessarily succeed, to set old master as read-only
 			go func() {
 				_, err := inst.SetReadOnly(&analysisEntry.AnalyzedInstanceKey, true)
 				AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("- RecoverDeadMaster: applying read-only=1 on demoted master: success=%t", (err == nil)))
+				if config.Config.Vitess {
+					err = TabletSetReplica(&analysisEntry.AnalyzedInstanceKey)
+					AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("- RecoverDeadMaster: TabletSetReplica: success=%t", (err == nil)))
+				}
 			}()
 		}
 
@@ -955,6 +963,16 @@ func checkAndRecoverDeadMaster(analysisEntry inst.ReplicationAnalysis, candidate
 		recoverDeadMasterFailureCounter.Inc(1)
 	}
 
+	return true, topologyRecovery, err
+}
+
+func changeTabletToMaster(analysisEntry inst.ReplicationAnalysis, candidateInstanceKey *inst.InstanceKey, forceInstanceRecovery bool, skipProcesses bool) (recoveryAttempted bool, topologyRecovery *TopologyRecovery, err error) {
+	// TODO(sougou): This spams TER on the tablet until an update is received.
+	// Find a way to wait till the next update before retrying.
+	if config.Config.Vitess {
+		err = TabletSetMaster(&analysisEntry.AnalyzedInstanceKey)
+		AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("- ChangeTabletToMaster: success=%t", (err == nil)))
+	}
 	return true, topologyRecovery, err
 }
 
@@ -1549,6 +1567,8 @@ func getCheckAndRecoverFunction(analysisCode inst.AnalysisCode, analyzedInstance
 		return checkAndRecoverGenericProblem, false
 	case inst.UnreachableIntermediateMasterWithLaggingReplicas:
 		return checkAndRecoverGenericProblem, false
+	case inst.TabletMustBeMaster:
+		return changeTabletToMaster, true
 	}
 	// Right now this is mostly causing noise with no clear action.
 	// Will revisit this in the future.
@@ -1657,6 +1677,18 @@ func executeCheckAndRecoverFunction(analysisEntry inst.ReplicationAnalysis, cand
 	// Actually attempt recovery:
 	if isActionableRecovery || util.ClearToLog("executeCheckAndRecoverFunction: recovery", analysisEntry.AnalyzedInstanceKey.StringCode()) {
 		log.Infof("executeCheckAndRecoverFunction: proceeding with %+v recovery on %+v; isRecoverable?: %+v; skipProcesses: %+v", analysisEntry.Analysis, analysisEntry.AnalyzedInstanceKey, isActionableRecovery, skipProcesses)
+	}
+
+	// If in Vitess mode, obtain shard lock.
+	if config.Config.Vitess {
+		unlock, err := LockShard(&analysisEntry.AnalyzedInstanceKey)
+		if err != nil {
+			log.Infof("CheckAndRecover: Analysis: %+v, InstanceKey: %+v, candidateInstanceKey: %+v, "+
+				"skipProcesses: %v: NOT detecting/recovering host, could not obtain shard lock (%v)",
+				analysisEntry.Analysis, analysisEntry.AnalyzedInstanceKey, candidateInstanceKey, skipProcesses, err)
+			return false, nil, err
+		}
+		defer unlock(&err)
 	}
 	recoveryAttempted, topologyRecovery, err = checkAndRecoverFunction(analysisEntry, candidateInstanceKey, forceInstanceRecovery, skipProcesses)
 	if !recoveryAttempted {

@@ -57,6 +57,7 @@ const (
 	AllIntermediateMasterReplicasNotReplicating                          = "AllIntermediateMasterReplicasNotReplicating"
 	FirstTierReplicaFailingToConnectToMaster                             = "FirstTierReplicaFailingToConnectToMaster"
 	BinlogServerFailingToConnectToMaster                                 = "BinlogServerFailingToConnectToMaster"
+	TabletMustBeMaster                                                   = "TabletMustBeMaster"
 )
 
 const (
@@ -170,6 +171,7 @@ type ReplicationAnalysis struct {
 	MaxReplicaGTIDErrant                      string
 	CommandHint                               string
 	IsReadOnly                                bool
+	TabletIsMaster                            bool
 }
 
 type AnalysisMap map[string](*ReplicationAnalysis)

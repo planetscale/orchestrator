@@ -21,16 +21,19 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/openark/orchestrator/go/config"
 	"github.com/openark/orchestrator/go/db"
 	"github.com/openark/orchestrator/go/process"
-	"github.com/openark/orchestrator/go/raft"
+	orcraft "github.com/openark/orchestrator/go/raft"
 	"github.com/openark/orchestrator/go/util"
 
 	"github.com/openark/orchestrator/external/golib/log"
 	"github.com/openark/orchestrator/external/golib/sqlutils"
 	"github.com/patrickmn/go-cache"
 	"github.com/rcrowley/go-metrics"
+
+	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 )
 
 var analysisChangeWriteAttemptCounter = metrics.NewCounter()
@@ -350,7 +353,8 @@ func GetReplicationAnalysis(clusterName string, hints *ReplicationAnalysisHints)
 		COUNT(
 			DISTINCT case when replica_instance.log_bin
 			AND replica_instance.log_slave_updates then replica_instance.major_version else NULL end
-		) AS count_distinct_logging_major_versions
+		) AS count_distinct_logging_major_versions,
+		vitess_tablet.info AS tablet_info
 	FROM
 		database_instance master_instance
 		LEFT JOIN hostname_resolve ON (
@@ -387,6 +391,10 @@ func GetReplicationAnalysis(clusterName string, hints *ReplicationAnalysisHints)
 		)
 		LEFT JOIN cluster_domain_name ON (
 			cluster_domain_name.cluster_name = master_instance.cluster_name
+		)
+		LEFT JOIN vitess_tablet ON (
+			master_instance.hostname = vitess_tablet.hostname
+			AND master_instance.port = vitess_tablet.port
 		)
 	WHERE
 		database_instance_maintenance.database_instance_maintenance_id IS NULL
@@ -474,6 +482,12 @@ func GetReplicationAnalysis(clusterName string, hints *ReplicationAnalysisHints)
 
 		a.IsReadOnly = m.GetUint("read_only") == 1
 
+		a.TabletIsMaster = true
+		tablet := &topodatapb.Tablet{}
+		if err := proto.UnmarshalText(m.GetString("tablet_info"), tablet); err == nil {
+			a.TabletIsMaster = tablet.Type == topodatapb.TabletType_MASTER
+		}
+
 		if !a.LastCheckValid {
 			analysisMessage := fmt.Sprintf("analysis: ClusterName: %+v, IsMaster: %+v, LastCheckValid: %+v, LastCheckPartialSuccess: %+v, CountReplicas: %+v, CountValidReplicas: %+v, CountValidReplicatingReplicas: %+v, CountLaggingReplicas: %+v, CountDelayedReplicas: %+v, CountReplicasFailingToConnectToMaster: %+v",
 				a.ClusterDetails.ClusterName, a.IsMaster, a.LastCheckValid, a.LastCheckPartialSuccess, a.CountReplicas, a.CountValidReplicas, a.CountValidReplicatingReplicas, a.CountLaggingReplicas, a.CountDelayedReplicas, a.CountReplicasFailingToConnectToMaster,
@@ -536,6 +550,10 @@ func GetReplicationAnalysis(clusterName string, hints *ReplicationAnalysisHints)
 		} else if a.IsMaster && a.LastCheckValid && a.CountReplicas > 1 && a.CountValidReplicas < a.CountReplicas && a.CountValidReplicas > 0 && a.CountValidReplicatingReplicas == 0 {
 			a.Analysis = AllMasterReplicasNotReplicatingOrDead
 			a.Description = "Master is reachable but none of its replicas is replicating"
+			//
+		} else if a.IsMaster && !a.TabletIsMaster {
+			a.Analysis = TabletMustBeMaster
+			a.Description = "The tablet type must be changed to MASTER"
 			//
 		} else /* co-master */ if a.IsCoMaster && !a.LastCheckValid && a.CountReplicas > 0 && a.CountValidReplicas == a.CountReplicas && a.CountValidReplicatingReplicas == 0 {
 			a.Analysis = DeadCoMaster
