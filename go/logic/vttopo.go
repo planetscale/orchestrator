@@ -50,7 +50,9 @@ func OpenVitessTopo() <-chan time.Time {
 	if _, err := db.ExecOrchestrator("delete from vitess_tablet"); err != nil {
 		log.Errore(err)
 	}
-	RefreshVitessTopo()
+	if IsLeaderOrActive() {
+		RefreshVitessTopo()
+	}
 	// TODO(sougou): parameterize poll interval.
 	return time.Tick(15 * time.Second)
 }
@@ -59,6 +61,9 @@ func OpenVitessTopo() <-chan time.Time {
 func RefreshVitessTopo() {
 	// Safety check
 	if !config.Config.Vitess {
+		return
+	}
+	if !IsLeaderOrActive() {
 		return
 	}
 

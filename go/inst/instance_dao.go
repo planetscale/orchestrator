@@ -875,9 +875,9 @@ func ReadTopologyInstanceBufferable(instanceKey *InstanceKey, bufferWrites bool,
 	// For a vitess cluster, the tablet type dictates the rule
 	{
 		if tablet.Type == topodatapb.TabletType_MASTER || tablet.Type == topodatapb.TabletType_REPLICA {
-			instance.PromotionRule = "neutral"
+			instance.PromotionRule = NeutralPromoteRule
 		} else {
-			instance.PromotionRule = "must_not"
+			instance.PromotionRule = MustNotPromoteRule
 		}
 	}
 
