@@ -172,3 +172,17 @@ func TabletSetMaster(instanceKey inst.InstanceKey) error {
 	}
 	return nil
 }
+
+// TabletDemoteMaster requests the master tablet to stop accepting transactions.
+func TabletDemoteMaster(instanceKey inst.InstanceKey) error {
+	if instanceKey.Hostname == "" {
+		return errors.New("Can't demote master: instance is unspecified")
+	}
+	tablet, err := inst.ReadTablet(instanceKey)
+	if err != nil {
+		return err
+	}
+	tmc := tmclient.NewTabletManagerClient()
+	_, err = tmc.DemoteMaster(context.TODO(), tablet)
+	return err
+}

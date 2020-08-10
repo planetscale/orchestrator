@@ -1987,9 +1987,18 @@ func GracefulMasterTakeover(clusterName string, designatedKey *inst.InstanceKey,
 		return nil, nil, fmt.Errorf("Failed running PreGracefulTakeoverProcesses: %+v", err)
 	}
 
-	log.Infof("GracefulMasterTakeover: Will set %+v as read_only", clusterMaster.Key)
-	if clusterMaster, err = inst.SetReadOnly(&clusterMaster.Key, true); err != nil {
-		return nil, nil, err
+	if config.Config.Vitess {
+		log.Infof("GracefulMasterTakeover: Invoking TabletDemoteMaster on %+v", clusterMaster.Key)
+		// TabletDemoteMaster enters read-only gracefully by allowing
+		// current transactions to complete.
+		if err := TabletDemoteMaster(clusterMaster.Key); err != nil {
+			return nil, nil, err
+		}
+	} else {
+		log.Infof("GracefulMasterTakeover: Will set %+v as read_only", clusterMaster.Key)
+		if clusterMaster, err = inst.SetReadOnly(&clusterMaster.Key, true); err != nil {
+			return nil, nil, err
+		}
 	}
 	demotedMasterSelfBinlogCoordinates := &clusterMaster.SelfBinlogCoordinates
 	log.Infof("GracefulMasterTakeover: Will wait for %+v to reach master coordinates %+v", designatedInstance.Key, *demotedMasterSelfBinlogCoordinates)
