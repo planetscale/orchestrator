@@ -180,14 +180,27 @@ func TabletSetMaster(instanceKey inst.InstanceKey) error {
 
 // TabletDemoteMaster requests the master tablet to stop accepting transactions.
 func TabletDemoteMaster(instanceKey inst.InstanceKey) error {
+	return tabletDemoteMaster(instanceKey, true)
+}
+
+// TabletUndoDemoteMaster requests the master tablet to undo the demote.
+func TabletUndoDemoteMaster(instanceKey inst.InstanceKey) error {
+	return tabletDemoteMaster(instanceKey, false)
+}
+
+func tabletDemoteMaster(instanceKey inst.InstanceKey, forward bool) error {
 	if instanceKey.Hostname == "" {
-		return errors.New("Can't demote master: instance is unspecified")
+		return errors.New("Can't demote/undo master: instance is unspecified")
 	}
 	tablet, err := inst.ReadTablet(instanceKey)
 	if err != nil {
 		return err
 	}
 	tmc := tmclient.NewTabletManagerClient()
-	_, err = tmc.DemoteMaster(context.TODO(), tablet)
+	if forward {
+		_, err = tmc.DemoteMaster(context.TODO(), tablet)
+	} else {
+		err = tmc.UndoDemoteMaster(context.TODO(), tablet)
+	}
 	return err
 }

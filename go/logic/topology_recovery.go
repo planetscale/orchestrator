@@ -2021,8 +2021,15 @@ func GracefulMasterTakeover(clusterName string, designatedKey *inst.InstanceKey,
 	if topologyRecovery.SuccessorKey == nil {
 		// Promotion fails.
 		// Undo setting read-only on original master.
-		inst.SetReadOnly(&clusterMaster.Key, false)
-		return nil, nil, fmt.Errorf("GracefulMasterTakeover: Recovery attempted yet no replica promoted; err=%+v", err)
+		if config.Config.Vitess {
+			log.Infof("GracefulMasterTakeover: Invoking TabletUndoDemoteMaster on %+v", clusterMaster.Key)
+			if err := TabletUndoDemoteMaster(clusterMaster.Key); err != nil {
+				return nil, nil, err
+			}
+		} else {
+			inst.SetReadOnly(&clusterMaster.Key, false)
+			return nil, nil, fmt.Errorf("GracefulMasterTakeover: Recovery attempted yet no replica promoted; err=%+v", err)
+		}
 	}
 	var gtidHint inst.OperationGTIDHint = inst.GTIDHintNeutral
 	if topologyRecovery.RecoveryType == MasterRecoveryGTID {
