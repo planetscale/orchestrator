@@ -7,6 +7,7 @@
   "MySQLReplicaPassword": "",
   "BackendDB": "sqlite",
   "SQLite3DataFile": "/home/sougou/dev/src/vitess.io/vitess/vtdataroot/orchestrator.sqlite3",
+  "RecoverMasterClusterFilters": ["*"],
   "RecoveryPeriodBlockSeconds": 1,
   "DelayMasterPromotionIfSQLThreadNotUpToDate": true
 }

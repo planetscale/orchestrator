@@ -47,6 +47,7 @@ import (
 	"github.com/openark/orchestrator/go/metrics/query"
 	"github.com/openark/orchestrator/go/util"
 
+	"vitess.io/vitess/go/tb"
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 	"vitess.io/vitess/go/vt/topo/topoproto"
 )
@@ -312,7 +313,7 @@ func expectReplicationThreadsState(instanceKey *InstanceKey, expectedState Repli
 func ReadTopologyInstanceBufferable(instanceKey *InstanceKey, bufferWrites bool, latency *stopwatch.NamedStopwatch) (inst *Instance, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = logReadTopologyInstanceError(instanceKey, "Unexpected, aborting", fmt.Errorf("%+v", r))
+			err = logReadTopologyInstanceError(instanceKey, "Unexpected, aborting", tb.Errorf("%+v", r))
 		}
 	}()
 
@@ -873,7 +874,7 @@ func ReadTopologyInstanceBufferable(instanceKey *InstanceKey, bufferWrites bool,
 		}()
 	}
 	// For a vitess cluster, the tablet type dictates the rule
-	{
+	if tablet != nil {
 		if tablet.Type == topodatapb.TabletType_MASTER || tablet.Type == topodatapb.TabletType_REPLICA {
 			instance.PromotionRule = NeutralPromoteRule
 		} else {
@@ -3366,7 +3367,7 @@ func ReadTablet(instanceKey InstanceKey) (*topodatapb.Tablet, error) {
 	err := db.QueryOrchestrator(query, args, func(row sqlutils.RowMap) error {
 		return proto.UnmarshalText(row.GetString("info"), tablet)
 	})
-	if err != nil {
+	if err != nil || tablet.Alias == nil {
 		return nil, err
 	}
 	return tablet, nil
