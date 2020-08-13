@@ -895,10 +895,6 @@ func checkAndRecoverDeadMaster(analysisEntry inst.ReplicationAnalysis, candidate
 			{
 				_, err := inst.SetReadOnly(&promotedReplica.Key, false)
 				AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("- RecoverDeadMaster: applying read-only=0 on promoted master: success=%t", (err == nil)))
-				if config.Config.Vitess {
-					err = TabletSetMaster(promotedReplica.Key)
-					AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("- RecoverDeadMaster: TabletSetMaster: success=%t", (err == nil)))
-				}
 			}
 			// Let's attempt, though we won't necessarily succeed, to set old master as read-only
 			go func() {
@@ -963,11 +959,7 @@ func checkAndRecoverDeadMaster(analysisEntry inst.ReplicationAnalysis, candidate
 }
 
 func changeTabletToMaster(analysisEntry inst.ReplicationAnalysis, candidateInstanceKey *inst.InstanceKey, forceInstanceRecovery bool, skipProcesses bool) (recoveryAttempted bool, topologyRecovery *TopologyRecovery, err error) {
-	// This check is not required, but it's there for safety.
-	if config.Config.Vitess {
-		err = TabletSetMaster(analysisEntry.AnalyzedInstanceKey)
-		AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("- ChangeTabletToMaster: success=%t", (err == nil)))
-	}
+	// TODO(sougou): remove this function.
 	return true, topologyRecovery, err
 }
 
@@ -2024,12 +2016,12 @@ func GracefulMasterTakeover(clusterName string, designatedKey *inst.InstanceKey,
 		if config.Config.Vitess {
 			log.Infof("GracefulMasterTakeover: Invoking TabletUndoDemoteMaster on %+v", clusterMaster.Key)
 			if err := TabletUndoDemoteMaster(clusterMaster.Key); err != nil {
-				return nil, nil, err
+				log.Errore(err)
 			}
 		} else {
 			inst.SetReadOnly(&clusterMaster.Key, false)
-			return nil, nil, fmt.Errorf("GracefulMasterTakeover: Recovery attempted yet no replica promoted; err=%+v", err)
 		}
+		return nil, nil, fmt.Errorf("GracefulMasterTakeover: Recovery attempted yet no replica promoted; err=%+v", err)
 	}
 	var gtidHint inst.OperationGTIDHint = inst.GTIDHintNeutral
 	if topologyRecovery.RecoveryType == MasterRecoveryGTID {

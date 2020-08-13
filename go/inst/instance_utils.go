@@ -150,6 +150,8 @@ func (this *InstancesSorterByExec) Less(i, j int) bool {
 			return true
 		}
 	}
+	// TODO(sougou): this should be changed to use GTIDs.
+	// File:pos comparison is reliable only if all replicas were pointed at the same master.
 	return this.instances[i].ExecBinlogCoordinates.SmallerThan(&this.instances[j].ExecBinlogCoordinates)
 }
 

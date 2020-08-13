@@ -157,27 +157,6 @@ func LockShard(instanceKey inst.InstanceKey) (func(*error), error) {
 	return unlock, err
 }
 
-// TabletSetMaster designates the tablet that owns an instance as the master.
-func TabletSetMaster(instanceKey inst.InstanceKey) error {
-	if instanceKey.Hostname == "" {
-		return errors.New("Can't set tablet to master: instance is unspecified")
-	}
-	tablet, err := inst.ReadTablet(instanceKey)
-	if err != nil {
-		return err
-	}
-	tmc := tmclient.NewTabletManagerClient()
-	if err := tmc.ChangeType(context.TODO(), tablet, topodatapb.TabletType_MASTER); err != nil {
-		return err
-	}
-	// Proactively change the tablet type locally so we don't spam this until we get the refresh.
-	tablet.Type = topodatapb.TabletType_MASTER
-	if err := inst.SaveTablet(instanceKey, tablet); err != nil {
-		log.Errore(err)
-	}
-	return nil
-}
-
 // TabletDemoteMaster requests the master tablet to stop accepting transactions.
 func TabletDemoteMaster(instanceKey inst.InstanceKey) error {
 	return tabletDemoteMaster(instanceKey, true)

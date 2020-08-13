@@ -17,6 +17,8 @@
 package inst
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	goos "os"
 	"regexp"
@@ -30,6 +32,8 @@ import (
 	"github.com/openark/orchestrator/external/golib/util"
 	"github.com/openark/orchestrator/go/config"
 	"github.com/openark/orchestrator/go/os"
+	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
+	"vitess.io/vitess/go/vt/vttablet/tmclient"
 )
 
 type StopReplicationMethod string
@@ -2533,6 +2537,9 @@ func RegroupReplicasGTID(
 			}
 		}
 	}
+	if err := TabletSetMaster(candidateReplica.Key); err != nil {
+		return emptyReplicas, emptyReplicas, emptyReplicas, candidateReplica, err
+	}
 	moveGTIDFunc := func() error {
 		log.Debugf("RegroupReplicasGTID: working on %d replicas", len(replicasToMove))
 
@@ -2636,6 +2643,28 @@ func RegroupReplicas(masterKey *InstanceKey, returnReplicaEvenOnFailureToRegroup
 	// And, as last resort, we do PseudoGTID & binlog servers
 	log.Warningf("RegroupReplicas: unsure what method to invoke for %+v; trying Pseudo-GTID+Binlog Servers", *masterKey)
 	return RegroupReplicasPseudoGTIDIncludingSubReplicasOfBinlogServers(masterKey, returnReplicaEvenOnFailureToRegroup, onCandidateReplicaChosen, postponedFunctionsContainer, nil)
+}
+
+// TabletSetMaster designates the tablet that owns an instance as the master.
+// TODO(sougou): Move this to a "tablet" file.
+func TabletSetMaster(instanceKey InstanceKey) error {
+	if instanceKey.Hostname == "" {
+		return errors.New("Can't set tablet to master: instance is unspecified")
+	}
+	tablet, err := ReadTablet(instanceKey)
+	if err != nil {
+		return err
+	}
+	tmc := tmclient.NewTabletManagerClient()
+	if err := tmc.ChangeType(context.TODO(), tablet, topodatapb.TabletType_MASTER); err != nil {
+		return err
+	}
+	// Proactively change the tablet type locally so we don't spam this until we get the refresh.
+	tablet.Type = topodatapb.TabletType_MASTER
+	if err := SaveTablet(instanceKey, tablet); err != nil {
+		log.Errore(err)
+	}
+	return nil
 }
 
 // relocateBelowInternal is a protentially recursive function which chooses how to relocate an instance below another.
